@@ -27,6 +27,56 @@ gpt-5.4
 
 Text-only requests are not rewritten, even if the model name is one of the aliases. They are passed through to the default backend unchanged.
 
+## API Key Handling
+
+The middleware supports three API key strategies, matching the three route modes.
+
+### 1. Pass-through key mode
+
+This is the default behavior in `ROUTE_MODE=default`.
+
+```env
+ROUTE_MODE=default
+DEFAULT_BACKEND_BASE_URL=http://127.0.0.1:8090/v1
+```
+
+The middleware does not own or replace the API key. Whatever key the client sends in `Authorization: Bearer ...` is forwarded to the upstream backend at `127.0.0.1:8090`.
+
+This applies to both text-only requests and image requests in default mode. If an image request needs model rewriting, only the top-level `model` is changed; the API key is still passed through unchanged.
+
+### 2. Custom vision backend key
+
+Use this when only multimodal image requests should call a separate vision backend with its own key.
+
+```env
+ROUTE_MODE=custom-vision
+VISION_BACKEND_BASE_URL=https://vision-api.example.com/v1
+VISION_BACKEND_API_KEY=sk-vision
+```
+
+Behavior:
+
+- Text-only requests continue to use the incoming client key and go to `DEFAULT_BACKEND_BASE_URL`.
+- Image requests that match a multimodal alias go to `VISION_BACKEND_BASE_URL`.
+- If `VISION_BACKEND_API_KEY` is set, that key is used for the vision backend.
+- If `VISION_BACKEND_API_KEY` is empty, the incoming client key is reused.
+
+### 3. Custom all-backend key
+
+Use this when all specified-model requests should call a custom backend with its own key.
+
+```env
+ROUTE_MODE=custom-all
+CUSTOM_BACKEND_BASE_URL=https://api.example.com/v1
+CUSTOM_BACKEND_API_KEY=sk-custom
+```
+
+Behavior:
+
+- Any request with a `model` goes to `CUSTOM_BACKEND_BASE_URL`.
+- If `CUSTOM_BACKEND_API_KEY` is set, it replaces the incoming client key.
+- If `CUSTOM_BACKEND_API_KEY` is empty, the incoming client key is reused.
+
 ## Important Routing Detail
 
 For multi-turn conversations, the middleware only checks the latest `role=user` message:
