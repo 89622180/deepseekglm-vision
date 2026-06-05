@@ -1,5 +1,7 @@
 # deepseekglm-vision
 
+[English](README.md) | [简体中文](README.zh.md)
+
 一个 OpenAI 兼容的多模态路由中间件，用于在文本模型和视觉模型之间自动分流。
 
 这个项目尽量保持简单：它位于客户端和 OpenAI 兼容后端之间，只检查当前请求是否需要视觉模型，其它参数尽量原样转发。

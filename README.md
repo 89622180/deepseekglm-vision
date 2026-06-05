@@ -1,5 +1,7 @@
 ﻿# deepseekglm-vision
 
+[English](README.md) | [简体中文](README.zh.md)
+
 OpenAI-compatible multimodal routing middleware for model alias switching.
 
 This project is intentionally small: it sits between your client and an OpenAI-compatible backend, inspects only the current request, and forwards everything else as-is. It is designed for deployments where a text backend and a vision-capable backend share the same API shape.
