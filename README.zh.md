@@ -39,7 +39,7 @@ ROUTE_MODE=default
 DEFAULT_BACKEND_BASE_URL=http://127.0.0.1:8090/v1
 ```
 
-中间件不保存、不替换、不生成 KEY。客户端请求里传入的 `Authorization: Bearer ...` 会原样转发给 `127.0.0.1:8090` 后端。
+中间件不保存、不替换、不生成 KEY。客户端请求里传入的 `Authorization: Bearer ...` 或 `x-api-key: ...` 会原样转发给 `127.0.0.1:8090` 后端。
 
 默认模式下，无论是纯文本请求还是带图片请求，KEY 都是透传的。带图片请求如果触发模型改写，也只会改顶层 `model`，不会改 `Authorization`。
 
@@ -84,12 +84,31 @@ CUSTOM_BACKEND_API_KEY=sk-custom
 
 - `/v1/chat/completions`：检查 `messages` 里最后一条用户消息
 - `/v1/responses`：检查 `input` 里最后一条用户消息
+- `/v1/messages`：兼容 Claude Messages API，检查 `messages` 里最后一条用户消息
 
 这样可以避免一个常见问题：第一轮对话带图片，后续追问是纯文本。如果历史消息里还保留着旧图片，中间件不会因为旧图片而继续切到视觉模型。
 
+## 支持的协议和接口
+
+中间件同时兼容 OpenAI 风格和 Claude / Anthropic 风格的请求结构。
+
+支持的 JSON 接口包括：
+
+- OpenAI Chat Completions：`/v1/chat/completions`
+- OpenAI Responses API：`/v1/responses`
+- Claude Messages API：`/v1/messages`
+- 其它 OpenAI 兼容的 `/v1/*` 路径会透传到默认后端
+
+鉴权头处理：
+
+- OpenAI 风格：`Authorization: Bearer <key>`
+- Claude 风格：`x-api-key: <key>`
+
+在 KEY 透传模式下，中间件会保留传入的鉴权头类型。也就是说，Claude 请求传入 `x-api-key`，上游也会收到 `x-api-key`，不会被转换成 `Authorization`。
+
 ## 支持的图片格式
 
-兼容 OpenAI 常见的图片输入格式，并且不会下载、解析或改写图片地址。
+兼容 OpenAI 和 Claude 常见的图片输入格式，并且不会下载、解析或改写图片地址。
 
 ### Chat Completions 格式
 
@@ -139,6 +158,43 @@ CUSTOM_BACKEND_API_KEY=sk-custom
   "type": "image_url",
   "image_url": {
     "url": "data:image/png;base64,iVBORw0KGgo..."
+  }
+}
+```
+
+### Claude Messages API 格式
+
+```json
+{
+  "model": "deepseek-v4-flash",
+  "max_tokens": 512,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "描述这张图片" },
+        {
+          "type": "image",
+          "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "..."
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+也支持 Claude 的 URL 图片来源：
+
+```json
+{
+  "type": "image",
+  "source": {
+    "type": "url",
+    "url": "https://example.com/image.png"
   }
 }
 ```

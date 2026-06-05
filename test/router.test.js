@@ -26,7 +26,20 @@ test("detects OpenAI image inputs", () => {
   assert.equal(internals.hasMultimodalInput({ type: "image_url", image_url: { url: "https://example.com/a.png" } }), true);
   assert.equal(internals.hasMultimodalInput({ type: "image_url", image_url: { url: "data:image/png;base64,abc" } }), true);
   assert.equal(internals.hasMultimodalInput({ type: "input_image", image_url: "https://example.com/a.png" }), true);
+  assert.equal(internals.hasMultimodalInput({ type: "image", source: { type: "base64", media_type: "image/png", data: "abc" } }), true);
+  assert.equal(internals.hasMultimodalInput({ type: "image", source: { type: "url", url: "https://example.com/a.png" } }), true);
   assert.equal(internals.hasMultimodalInput({ role: "user", content: "hello" }), false);
+});
+
+test("reads OpenAI bearer and Claude x-api-key credentials", () => {
+  assert.deepEqual(internals.getIncomingApiKey(new Headers({ authorization: "Bearer openai-key" })), {
+    key: "openai-key",
+    header: "authorization"
+  });
+  assert.deepEqual(internals.getIncomingApiKey(new Headers({ "x-api-key": "claude-key" })), {
+    key: "claude-key",
+    header: "x-api-key"
+  });
 });
 
 test("detects multimodal input only in the latest user turn", () => {
@@ -81,6 +94,7 @@ test("unspecified model passthroughs to default backend with incoming key", () =
   assert.deepEqual(route, {
     baseUrl: "http://127.0.0.1:8090/v1",
     apiKey: "incoming-key",
+    apiKeyHeader: "authorization",
     model: null,
     reason: "passthrough-unspecified-model"
   });
@@ -121,6 +135,46 @@ test("default mode routes image payload with multimodal alias to gpt-5.4 case-in
   assert.equal(route.apiKey, "user-key");
   assert.equal(route.model, "gpt-5.4");
   assert.equal(route.reason, "default-multimodal");
+});
+
+test("default mode routes Claude image payload with x-api-key to gpt-5.4", () => {
+  const route = decideRoute({
+    config: config(),
+    body: {
+      model: "deepseek-v4-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "describe" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "abc" } }
+          ]
+        }
+      ]
+    },
+    headers: new Headers({ "x-api-key": "claude-key", "anthropic-version": "2023-06-01" })
+  });
+
+  assert.equal(route.baseUrl, "http://127.0.0.1:8090/v1");
+  assert.equal(route.apiKey, "claude-key");
+  assert.equal(route.apiKeyHeader, "x-api-key");
+  assert.equal(route.model, "gpt-5.4");
+});
+
+test("default mode passthroughs Claude text-only alias without rewriting model", () => {
+  const route = decideRoute({
+    config: config(),
+    body: {
+      model: "deepseek-v4-flash",
+      messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }]
+    },
+    headers: new Headers({ "x-api-key": "claude-key" })
+  });
+
+  assert.equal(route.apiKey, "claude-key");
+  assert.equal(route.apiKeyHeader, "x-api-key");
+  assert.equal(route.model, null);
+  assert.equal(route.reason, "passthrough");
 });
 
 test("default mode ignores images from earlier Responses API turns", () => {
@@ -272,6 +326,47 @@ test("buildUpstreamRequest preserves OpenAI image_url content while rewriting on
 
   assert.deepEqual(JSON.parse(upstream.body), {
     ...imageUrlRequest,
+    model: "gpt-5.4"
+  });
+});
+
+test("buildUpstreamRequest preserves Claude x-api-key and rewrites only model", () => {
+  const claudeRequest = {
+    model: "GLM-5.1",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Describe this image." },
+          { type: "image", source: { type: "url", url: "https://example.com/cat.png" } }
+        ]
+      }
+    ]
+  };
+
+  const upstream = buildUpstreamRequest({
+    originalPath: "messages",
+    body: claudeRequest,
+    headers: new Headers({
+      "x-api-key": "old-claude-key",
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json"
+    }),
+    route: {
+      baseUrl: "http://127.0.0.1:8090/v1",
+      apiKey: "new-claude-key",
+      apiKeyHeader: "x-api-key",
+      model: "gpt-5.4"
+    }
+  });
+
+  assert.equal(upstream.url, "http://127.0.0.1:8090/v1/messages");
+  assert.equal(upstream.headers.get("x-api-key"), "new-claude-key");
+  assert.equal(upstream.headers.get("authorization"), null);
+  assert.equal(upstream.headers.get("anthropic-version"), "2023-06-01");
+  assert.deepEqual(JSON.parse(upstream.body), {
+    ...claudeRequest,
     model: "gpt-5.4"
   });
 });

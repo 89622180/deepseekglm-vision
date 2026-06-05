@@ -1,7 +1,23 @@
-function getBearerToken(headers) {
+function getIncomingApiKey(headers) {
+  const xApiKey = headers.get("x-api-key");
+  if (xApiKey) {
+    return {
+      key: xApiKey.trim(),
+      header: "x-api-key"
+    };
+  }
+
   const authorization = headers.get("authorization") || "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : "";
+  return {
+    key: match ? match[1].trim() : "",
+    header: "authorization"
+  };
+}
+
+function getBearerToken(headers) {
+  const incoming = getIncomingApiKey(headers);
+  return incoming.header === "authorization" ? incoming.key : "";
 }
 
 function withV1Path(baseUrl, path) {
@@ -44,6 +60,20 @@ function hasMultimodalInput(value) {
 
   if (value.type === "input_image" && looksLikeImageUrl(value.image_url || value.url)) {
     return true;
+  }
+
+  if (value.type === "image" && value.source) {
+    if (typeof value.source === "object") {
+      if (value.source.type === "base64" && typeof value.source.data === "string" && value.source.data) {
+        return true;
+      }
+      if (value.source.type === "url" && looksLikeImageUrl(value.source.url)) {
+        return true;
+      }
+      if (looksLikeImageUrl(value.source.url)) {
+        return true;
+      }
+    }
   }
 
   return Object.values(value).some(hasMultimodalInput);
@@ -92,7 +122,8 @@ function requireUrl(value, label) {
 }
 
 export function decideRoute({ config, body, headers }) {
-  const incomingKey = getBearerToken(headers);
+  const incoming = getIncomingApiKey(headers);
+  const incomingKey = incoming.key;
   const specifiedModel = hasSpecifiedModel(body) ? body.model.trim() : "";
   const multimodal = isMultimodalModel(config, specifiedModel);
   const multimodalPayload = hasCurrentUserMultimodalInput(body);
@@ -101,6 +132,7 @@ export function decideRoute({ config, body, headers }) {
     return {
       baseUrl: config.defaultBackendBaseUrl,
       apiKey: incomingKey,
+      apiKeyHeader: incoming.header,
       model: null,
       reason: "passthrough-unspecified-model"
     };
@@ -110,6 +142,7 @@ export function decideRoute({ config, body, headers }) {
     return {
       baseUrl: requireUrl(config.customBackendBaseUrl, "CUSTOM_BACKEND_BASE_URL"),
       apiKey: config.customBackendApiKey || incomingKey,
+      apiKeyHeader: incoming.header,
       model: config.customBackendModel || specifiedModel,
       reason: "custom-all"
     };
@@ -120,6 +153,7 @@ export function decideRoute({ config, body, headers }) {
       return {
         baseUrl: requireUrl(config.visionBackendBaseUrl, "VISION_BACKEND_BASE_URL"),
         apiKey: config.visionBackendApiKey || incomingKey,
+        apiKeyHeader: incoming.header,
         model: config.visionBackendModel || specifiedModel,
         reason: "custom-vision"
       };
@@ -127,6 +161,7 @@ export function decideRoute({ config, body, headers }) {
     return {
       baseUrl: config.defaultBackendBaseUrl,
       apiKey: incomingKey,
+      apiKeyHeader: incoming.header,
       model: null,
       reason: "passthrough-text-alias"
     };
@@ -135,6 +170,7 @@ export function decideRoute({ config, body, headers }) {
   return {
     baseUrl: config.defaultBackendBaseUrl,
     apiKey: incomingKey,
+    apiKeyHeader: incoming.header,
     model: multimodal && multimodalPayload ? config.visionBackendModel : null,
     reason: multimodal && multimodalPayload ? "default-multimodal" : "passthrough"
   };
@@ -147,10 +183,15 @@ export function buildUpstreamRequest({ originalPath, body, headers, route }) {
   upstreamHeaders.delete("connection");
   upstreamHeaders.delete("accept-encoding");
 
-  if (route.apiKey) {
+  if (route.apiKey && route.apiKeyHeader === "x-api-key") {
+    upstreamHeaders.set("x-api-key", route.apiKey);
+    upstreamHeaders.delete("authorization");
+  } else if (route.apiKey) {
     upstreamHeaders.set("authorization", `Bearer ${route.apiKey}`);
+    upstreamHeaders.delete("x-api-key");
   } else {
     upstreamHeaders.delete("authorization");
+    upstreamHeaders.delete("x-api-key");
   }
 
   const nextBody = route.model ? { ...body, model: route.model } : body;
@@ -164,6 +205,7 @@ export function buildUpstreamRequest({ originalPath, body, headers, route }) {
 
 export const internals = {
   getBearerToken,
+  getIncomingApiKey,
   hasSpecifiedModel,
   hasMultimodalInput,
   hasCurrentUserMultimodalInput,

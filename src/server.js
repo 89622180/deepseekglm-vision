@@ -6,6 +6,7 @@ import { buildUpstreamRequest, decideRoute } from "./router.js";
 const OPENAI_JSON_ENDPOINTS = new Set([
   "/v1/chat/completions",
   "/v1/responses",
+  "/v1/messages",
   "/v1/embeddings",
   "/v1/completions"
 ]);
@@ -177,7 +178,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const config = loadConfig();
   const server = createServer(config);
   server.listen(config.port, config.host, () => {
-    console.log(`codex-mimo-vision listening on http://${config.host}:${config.port}`);
+    console.log(`deepseekglm-vision listening on http://${config.host}:${config.port}`);
     console.log(`route mode: ${config.routeMode}`);
   });
 }

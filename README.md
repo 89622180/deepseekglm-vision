@@ -40,7 +40,7 @@ ROUTE_MODE=default
 DEFAULT_BACKEND_BASE_URL=http://127.0.0.1:8090/v1
 ```
 
-The middleware does not own or replace the API key. Whatever key the client sends in `Authorization: Bearer ...` is forwarded to the upstream backend at `127.0.0.1:8090`.
+The middleware does not own or replace the API key. Whatever key the client sends in `Authorization: Bearer ...` or `x-api-key: ...` is forwarded to the upstream backend at `127.0.0.1:8090`.
 
 This applies to both text-only requests and image requests in default mode. If an image request needs model rewriting, only the top-level `model` is changed; the API key is still passed through unchanged.
 
@@ -86,9 +86,27 @@ For multi-turn conversations, the middleware only checks the latest `role=user` 
 
 This prevents an old image in conversation history from forcing later text-only follow-up messages onto the vision model.
 
+## Supported Protocols
+
+The middleware supports both OpenAI-compatible and Claude/Anthropic-compatible request shapes.
+
+Supported JSON endpoints include:
+
+- OpenAI Chat Completions: `/v1/chat/completions`
+- OpenAI Responses API: `/v1/responses`
+- Claude Messages API: `/v1/messages`
+- Other OpenAI-compatible `/v1/*` paths are passed through to the default backend
+
+Authentication header handling:
+
+- OpenAI style: `Authorization: Bearer <key>`
+- Claude style: `x-api-key: <key>`
+
+In pass-through mode, the middleware preserves the incoming auth style. A Claude request with `x-api-key` is forwarded upstream with `x-api-key`, not converted into `Authorization`.
+
 ## Supported Image Formats
 
-The middleware recognizes common OpenAI-compatible image payloads and preserves them unchanged.
+The middleware recognizes common OpenAI-compatible and Claude-compatible image payloads and preserves them unchanged.
 
 Chat Completions style:
 
@@ -128,6 +146,43 @@ Responses API style:
       ]
     }
   ]
+}
+```
+
+Claude Messages API style:
+
+```json
+{
+  "model": "deepseek-v4-flash",
+  "max_tokens": 512,
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        { "type": "text", "text": "Describe this image" },
+        {
+          "type": "image",
+          "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "..."
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Claude URL image source is also recognized:
+
+```json
+{
+  "type": "image",
+  "source": {
+    "type": "url",
+    "url": "https://example.com/image.png"
+  }
 }
 ```
 
