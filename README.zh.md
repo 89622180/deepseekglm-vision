@@ -28,6 +28,34 @@ DEFAULT_BACKEND_BASE_URL=http://127.0.0.1:8090/v1
 
 纯文本请求不会被改写。即使 `model` 是 `GLM-5` 或 `glm-5.1`，只要最新用户消息没有图片，就会原样透传到默认后端。
 
+## 视觉兜底模式
+
+除了显式的多模态别名，中间件还支持“文本模型带图自动兜底到视觉模型”。
+
+这个模式适用于客户端发送了图片，但仍然使用文本模型或缺少视觉能力的模型，例如 `deepseek-v4-pro`。中间件会让普通文本请求继续使用原模型；只有最新用户消息带图片时，才把上游 `model` 改成配置的视觉模型。
+
+```env
+VISION_FALLBACK_ENABLED=true
+VISION_FALLBACK_MODELS=deepseek-v4-pro
+VISION_FALLBACK_MODEL=gpt-5.4
+```
+
+行为：
+
+- `deepseek-v4-pro` + 没有图片：保持原模型，原样透传
+- `deepseek-v4-pro` + 最新用户消息带图片：上游 `model` 改成 `gpt-5.4`
+- KEY 和其它请求参数仍然按当前路由模式处理
+
+```mermaid
+flowchart LR
+    A["Codex<br/>+ image"] --> B["deepseekglm-vision<br/>:18080"]
+    B --> C{"Has image<br/>+ model lacks<br/>vision?"}
+    C -->|"No"| D["Original model<br/>(deepseek-v4-pro)"]
+    C -->|"Yes"| E["Vision model<br/>(gpt-5.4)"]
+    D --> F["Response"]
+    E --> F
+```
+
 ## KEY 处理方式
 
 中间件支持三种 KEY 处理方式，对应三种路由模式。

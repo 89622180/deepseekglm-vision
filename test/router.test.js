@@ -7,6 +7,9 @@ function config(overrides = {}) {
     routeMode: "default",
     defaultBackendBaseUrl: "http://127.0.0.1:8090/v1",
     multimodalModelSet: new Set(["glm-5.1", "glm-5", "deepseek-v4-pro", "deepseek-v4-flash"]),
+    visionFallbackEnabled: false,
+    visionFallbackModelSet: new Set(),
+    visionFallbackModel: "gpt-5.4",
     visionBackendBaseUrl: "",
     visionBackendApiKey: "",
     visionBackendModel: "gpt-5.4",
@@ -135,6 +138,54 @@ test("default mode routes image payload with multimodal alias to gpt-5.4 case-in
   assert.equal(route.apiKey, "user-key");
   assert.equal(route.model, "gpt-5.4");
   assert.equal(route.reason, "default-multimodal");
+});
+
+test("vision fallback rewrites configured text model with image to gpt-5.4", () => {
+  const route = decideRoute({
+    config: config({
+      visionFallbackEnabled: true,
+      visionFallbackModelSet: new Set(["deepseek-v4-pro"]),
+      visionFallbackModel: "gpt-5.4"
+    }),
+    body: {
+      model: "deepseek-v4-pro",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "describe" },
+            { type: "image_url", image_url: { url: "https://example.com/a.png" } }
+          ]
+        }
+      ]
+    },
+    headers: new Headers({ authorization: "Bearer user-key" })
+  });
+
+  assert.equal(route.baseUrl, "http://127.0.0.1:8090/v1");
+  assert.equal(route.apiKey, "user-key");
+  assert.equal(route.model, "gpt-5.4");
+  assert.equal(route.reason, "vision-fallback");
+});
+
+test("vision fallback keeps configured text model unchanged without image", () => {
+  const route = decideRoute({
+    config: config({
+      visionFallbackEnabled: true,
+      visionFallbackModelSet: new Set(["deepseek-v4-pro"]),
+      visionFallbackModel: "gpt-5.4"
+    }),
+    body: {
+      model: "deepseek-v4-pro",
+      messages: [{ role: "user", content: "hello" }]
+    },
+    headers: new Headers({ authorization: "Bearer user-key" })
+  });
+
+  assert.equal(route.baseUrl, "http://127.0.0.1:8090/v1");
+  assert.equal(route.apiKey, "user-key");
+  assert.equal(route.model, null);
+  assert.equal(route.reason, "passthrough");
 });
 
 test("default mode routes Claude image payload with x-api-key to gpt-5.4", () => {

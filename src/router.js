@@ -33,6 +33,14 @@ function isMultimodalModel(config, model) {
   return typeof model === "string" && config.multimodalModelSet.has(model.toLowerCase());
 }
 
+function isVisionFallbackModel(config, model) {
+  return Boolean(
+    config.visionFallbackEnabled &&
+    typeof model === "string" &&
+    config.visionFallbackModelSet?.has(model.toLowerCase())
+  );
+}
+
 function looksLikeImageUrl(value) {
   return typeof value === "string" && (
     /^data:image\//i.test(value) ||
@@ -126,6 +134,7 @@ export function decideRoute({ config, body, headers }) {
   const incomingKey = incoming.key;
   const specifiedModel = hasSpecifiedModel(body) ? body.model.trim() : "";
   const multimodal = isMultimodalModel(config, specifiedModel);
+  const visionFallback = isVisionFallbackModel(config, specifiedModel);
   const multimodalPayload = hasCurrentUserMultimodalInput(body);
 
   if (!specifiedModel) {
@@ -145,6 +154,16 @@ export function decideRoute({ config, body, headers }) {
       apiKeyHeader: incoming.header,
       model: config.customBackendModel || specifiedModel,
       reason: "custom-all"
+    };
+  }
+
+  if (visionFallback && multimodalPayload) {
+    return {
+      baseUrl: config.defaultBackendBaseUrl,
+      apiKey: incomingKey,
+      apiKeyHeader: incoming.header,
+      model: config.visionFallbackModel,
+      reason: "vision-fallback"
     };
   }
 
@@ -210,5 +229,6 @@ export const internals = {
   hasMultimodalInput,
   hasCurrentUserMultimodalInput,
   isMultimodalModel,
+  isVisionFallbackModel,
   withV1Path
 };

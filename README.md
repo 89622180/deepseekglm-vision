@@ -29,6 +29,34 @@ gpt-5.4
 
 Text-only requests are not rewritten, even if the model name is one of the aliases. They are passed through to the default backend unchanged.
 
+## Vision Fallback Mode
+
+In addition to explicit multimodal aliases, the middleware can also handle text-model fallback for image requests.
+
+Use this when a client sends an image while still using a text/non-vision model such as `deepseek-v4-pro`. The middleware can keep normal text requests on the original model, but rewrite image requests to a configured vision model.
+
+```env
+VISION_FALLBACK_ENABLED=true
+VISION_FALLBACK_MODELS=deepseek-v4-pro
+VISION_FALLBACK_MODEL=gpt-5.4
+```
+
+Behavior:
+
+- `deepseek-v4-pro` + no image: keep original model, pass through
+- `deepseek-v4-pro` + latest user message has image: rewrite upstream `model` to `gpt-5.4`
+- API key and other request parameters are still handled by the selected route mode
+
+```mermaid
+flowchart LR
+    A["Codex<br/>+ image"] --> B["deepseekglm-vision<br/>:18080"]
+    B --> C{"Has image<br/>+ model lacks<br/>vision?"}
+    C -->|"No"| D["Original model<br/>(deepseek-v4-pro)"]
+    C -->|"Yes"| E["Vision model<br/>(gpt-5.4)"]
+    D --> F["Response"]
+    E --> F
+```
+
 ## API Key Handling
 
 The middleware supports three API key strategies, matching the three route modes.
