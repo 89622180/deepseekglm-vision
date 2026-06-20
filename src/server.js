@@ -146,7 +146,7 @@ export function createServer(config = loadConfig()) {
     throw new Error(`Unsupported ROUTE_MODE: ${config.routeMode}`);
   }
 
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
     const path = url.pathname;
 
@@ -172,6 +172,13 @@ export function createServer(config = loadConfig()) {
       }
     });
   });
+
+  server.requestTimeout = config.upstreamTimeoutMs;
+  server.timeout = config.upstreamTimeoutMs;
+  server.keepAliveTimeout = 75000;
+  server.headersTimeout = 80000;
+
+  return server;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

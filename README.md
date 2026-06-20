@@ -310,6 +310,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/www/wwwroot/deepseekglm-vision
 Environment=NODE_ENV=production
+Environment=UPSTREAM_TIMEOUT_MS=3600000
 ExecStart=/usr/bin/node src/server.js
 Restart=always
 RestartSec=3
@@ -343,10 +344,14 @@ location ^~ /v1/
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
     proxy_http_version 1.1;
+    client_max_body_size 2000m;
+    client_body_timeout 3600s;
+    proxy_request_buffering off;
     proxy_buffering off;
     proxy_cache off;
-    proxy_read_timeout 600s;
-    proxy_send_timeout 600s;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    send_timeout 3600s;
 }
 
 location ^~ /

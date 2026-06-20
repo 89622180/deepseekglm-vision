@@ -84,7 +84,7 @@ export function loadConfig() {
     customBackendBaseUrl: env("CUSTOM_BACKEND_BASE_URL"),
     customBackendApiKey: env("CUSTOM_BACKEND_API_KEY"),
     customBackendModel: env("CUSTOM_BACKEND_MODEL"),
-    upstreamTimeoutMs: Number(env("UPSTREAM_TIMEOUT_MS", "600000"))
+    upstreamTimeoutMs: Number(env("UPSTREAM_TIMEOUT_MS", "3600000"))
   };
 }
 
