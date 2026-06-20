@@ -136,6 +136,24 @@ CUSTOM_BACKEND_API_KEY=sk-custom
 
 在 KEY 透传模式下，中间件会保留传入的鉴权头类型。也就是说，Claude 请求传入 `x-api-key`，上游也会收到 `x-api-key`，不会被转换成 `Authorization`。
 
+## Responses 转 Chat 兼容模式
+
+有些上游模型支持 Chat Completions，但不支持 Responses API。可以把这些模型名配置到：
+
+```env
+RESPONSES_TO_CHAT_MODELS=deepseek-v4-flash
+```
+
+当请求使用这些模型访问 `/v1/responses` 时，中间件会转发到上游 `/v1/chat/completions`。这里只做格式转接：
+
+- `input` 字符串会变成一条 user 消息
+- `input` 消息数组会变成 `messages`
+- `input_text` 会变成 Chat 的 `text`
+- `input_image` 会变成 Chat 的 `image_url`
+- `instructions` 会变成最前面的 system 消息
+- `max_output_tokens` 会变成 `max_tokens`
+- 模型名、API Key、stream 和其它请求参数保持不变
+
 ## 支持的图片格式
 
 兼容 OpenAI 和 Claude 常见的图片输入格式，并且不会下载、解析或改写图片地址。

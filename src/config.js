@@ -9,6 +9,7 @@ const DEFAULT_MULTIMODAL_MODELS = [
 ];
 const DEFAULT_MULTIMODAL_TARGET_MODEL = "gpt-5.4";
 const DEFAULT_VISION_FALLBACK_MODEL = "gpt-5.4";
+const DEFAULT_RESPONSES_TO_CHAT_MODELS = [];
 
 function loadDotEnv() {
   try {
@@ -64,6 +65,9 @@ export function loadConfig() {
     env("MULTIMODAL_MODELS", DEFAULT_MULTIMODAL_MODELS.join(","))
   );
   const visionFallbackModels = parseModelList(env("VISION_FALLBACK_MODELS"));
+  const responsesToChatModels = parseModelList(
+    env("RESPONSES_TO_CHAT_MODELS", DEFAULT_RESPONSES_TO_CHAT_MODELS.join(","))
+  );
 
   return {
     host: env("HOST", "0.0.0.0"),
@@ -78,6 +82,8 @@ export function loadConfig() {
     visionFallbackModels,
     visionFallbackModelSet: new Set(visionFallbackModels.map((name) => name.toLowerCase())),
     visionFallbackModel: env("VISION_FALLBACK_MODEL", DEFAULT_VISION_FALLBACK_MODEL),
+    responsesToChatModels,
+    responsesToChatModelSet: new Set(responsesToChatModels.map((name) => name.toLowerCase())),
     visionBackendBaseUrl: env("VISION_BACKEND_BASE_URL"),
     visionBackendApiKey: env("VISION_BACKEND_API_KEY"),
     visionBackendModel: env("VISION_BACKEND_MODEL", DEFAULT_MULTIMODAL_TARGET_MODEL),

@@ -1,6 +1,6 @@
 {
   "name": "deepseekglm-vision",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "OpenAI-compatible multimodal routing middleware.",
   "type": "module",
   "main": "src/server.js",

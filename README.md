@@ -134,6 +134,24 @@ Authentication header handling:
 
 In pass-through mode, the middleware preserves the incoming auth style. A Claude request with `x-api-key` is forwarded upstream with `x-api-key`, not converted into `Authorization`.
 
+## Responses To Chat Compatibility
+
+Some upstream models accept Chat Completions but do not implement the Responses API. You can list those model names in:
+
+```env
+RESPONSES_TO_CHAT_MODELS=deepseek-v4-flash
+```
+
+When a request uses one of those models and calls `/v1/responses`, the middleware forwards it to upstream `/v1/chat/completions` instead. This is only a format bridge:
+
+- `input` string becomes a user chat message
+- `input` message arrays become `messages`
+- `input_text` becomes chat `text`
+- `input_image` becomes chat `image_url`
+- `instructions` becomes a leading system message
+- `max_output_tokens` becomes `max_tokens`
+- Model name, API key, stream flag, and other request parameters are preserved
+
 ## Supported Image Formats
 
 The middleware recognizes common OpenAI-compatible and Claude-compatible image payloads and preserves them unchanged.

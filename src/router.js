@@ -41,6 +41,10 @@ function isVisionFallbackModel(config, model) {
   );
 }
 
+function isResponsesToChatModel(config, model) {
+  return typeof model === "string" && config.responsesToChatModelSet?.has(model.toLowerCase());
+}
+
 function looksLikeImageUrl(value) {
   return typeof value === "string" && (
     /^data:image\//i.test(value) ||
@@ -129,12 +133,123 @@ function requireUrl(value, label) {
   return value.replace(/\/+$/, "");
 }
 
+function normalizeRole(role) {
+  return ["system", "user", "assistant", "tool"].includes(role) ? role : "user";
+}
+
+function convertResponsesContentPart(part) {
+  if (!part || typeof part !== "object") {
+    return part;
+  }
+
+  if ((part.type === "input_text" || part.type === "output_text") && typeof part.text === "string") {
+    return { type: "text", text: part.text };
+  }
+
+  if (part.type === "input_image") {
+    const url = part.image_url || part.url;
+    const imageUrl = typeof url === "object" ? url : { url };
+    if (part.detail && !imageUrl.detail) {
+      imageUrl.detail = part.detail;
+    }
+    return { type: "image_url", image_url: imageUrl };
+  }
+
+  return part;
+}
+
+function simplifyChatContent(parts) {
+  if (!Array.isArray(parts)) {
+    return parts;
+  }
+
+  if (parts.every((part) => typeof part === "string")) {
+    return parts.join("\n");
+  }
+
+  if (parts.every((part) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string")) {
+    return parts.map((part) => part.text).join("\n");
+  }
+
+  return parts;
+}
+
+function convertResponsesContent(content) {
+  if (Array.isArray(content)) {
+    return simplifyChatContent(content.map(convertResponsesContentPart));
+  }
+
+  if (content && typeof content === "object") {
+    return simplifyChatContent([convertResponsesContentPart(content)]);
+  }
+
+  return content === undefined || content === null ? "" : content;
+}
+
+function convertResponsesInputToMessages(input) {
+  if (typeof input === "string") {
+    return [{ role: "user", content: input }];
+  }
+
+  if (!Array.isArray(input)) {
+    return [{ role: "user", content: convertResponsesContent(input) }];
+  }
+
+  const messages = [];
+  const pendingUserParts = [];
+
+  const flushPendingUserParts = () => {
+    if (pendingUserParts.length) {
+      messages.push({ role: "user", content: simplifyChatContent([...pendingUserParts]) });
+      pendingUserParts.length = 0;
+    }
+  };
+
+  for (const item of input) {
+    if (item && typeof item === "object" && (item.role || item.type === "message")) {
+      flushPendingUserParts();
+      messages.push({
+        role: normalizeRole(item.role),
+        content: convertResponsesContent(item.content)
+      });
+      continue;
+    }
+
+    const convertedItem = convertResponsesContentPart(item);
+    if (Array.isArray(convertedItem)) {
+      pendingUserParts.push(...convertedItem);
+    } else {
+      pendingUserParts.push(convertedItem);
+    }
+  }
+
+  flushPendingUserParts();
+  return messages;
+}
+
+function convertResponsesBodyToChat(body) {
+  const { input, instructions, max_output_tokens: maxOutputTokens, ...nextBody } = body;
+  const messages = convertResponsesInputToMessages(input);
+
+  if (typeof instructions === "string" && instructions.trim()) {
+    messages.unshift({ role: "system", content: instructions });
+  }
+
+  if (maxOutputTokens !== undefined && nextBody.max_tokens === undefined) {
+    nextBody.max_tokens = maxOutputTokens;
+  }
+
+  nextBody.messages = messages;
+  return nextBody;
+}
+
 export function decideRoute({ config, body, headers }) {
   const incoming = getIncomingApiKey(headers);
   const incomingKey = incoming.key;
   const specifiedModel = hasSpecifiedModel(body) ? body.model.trim() : "";
   const multimodal = isMultimodalModel(config, specifiedModel);
   const visionFallback = isVisionFallbackModel(config, specifiedModel);
+  const responsesToChat = isResponsesToChatModel(config, specifiedModel);
   const multimodalPayload = hasCurrentUserMultimodalInput(body);
 
   if (!specifiedModel) {
@@ -143,6 +258,7 @@ export function decideRoute({ config, body, headers }) {
       apiKey: incomingKey,
       apiKeyHeader: incoming.header,
       model: null,
+      responsesToChat: false,
       reason: "passthrough-unspecified-model"
     };
   }
@@ -153,6 +269,7 @@ export function decideRoute({ config, body, headers }) {
       apiKey: config.customBackendApiKey || incomingKey,
       apiKeyHeader: incoming.header,
       model: config.customBackendModel || specifiedModel,
+      responsesToChat,
       reason: "custom-all"
     };
   }
@@ -163,6 +280,7 @@ export function decideRoute({ config, body, headers }) {
       apiKey: incomingKey,
       apiKeyHeader: incoming.header,
       model: config.visionFallbackModel,
+      responsesToChat,
       reason: "vision-fallback"
     };
   }
@@ -174,6 +292,7 @@ export function decideRoute({ config, body, headers }) {
         apiKey: config.visionBackendApiKey || incomingKey,
         apiKeyHeader: incoming.header,
         model: config.visionBackendModel || specifiedModel,
+        responsesToChat,
         reason: "custom-vision"
       };
     }
@@ -182,6 +301,7 @@ export function decideRoute({ config, body, headers }) {
       apiKey: incomingKey,
       apiKeyHeader: incoming.header,
       model: null,
+      responsesToChat,
       reason: "passthrough-text-alias"
     };
   }
@@ -191,6 +311,7 @@ export function decideRoute({ config, body, headers }) {
     apiKey: incomingKey,
     apiKeyHeader: incoming.header,
     model: multimodal && multimodalPayload ? config.visionBackendModel : null,
+    responsesToChat,
     reason: multimodal && multimodalPayload ? "default-multimodal" : "passthrough"
   };
 }
@@ -214,11 +335,15 @@ export function buildUpstreamRequest({ originalPath, body, headers, route }) {
   }
 
   const nextBody = route.model ? { ...body, model: route.model } : body;
+  const upstreamPath = route.responsesToChat && originalPath === "responses" ? "chat/completions" : originalPath;
+  const upstreamBody = route.responsesToChat && originalPath === "responses"
+    ? convertResponsesBodyToChat(nextBody)
+    : nextBody;
 
   return {
-    url: withV1Path(route.baseUrl, originalPath),
+    url: withV1Path(route.baseUrl, upstreamPath),
     headers: upstreamHeaders,
-    body: JSON.stringify(nextBody)
+    body: JSON.stringify(upstreamBody)
   };
 }
 
@@ -230,5 +355,7 @@ export const internals = {
   hasCurrentUserMultimodalInput,
   isMultimodalModel,
   isVisionFallbackModel,
+  isResponsesToChatModel,
+  convertResponsesBodyToChat,
   withV1Path
 };

@@ -13,6 +13,7 @@ function config(overrides = {}) {
     visionBackendBaseUrl: "",
     visionBackendApiKey: "",
     visionBackendModel: "gpt-5.4",
+    responsesToChatModelSet: new Set(),
     customBackendBaseUrl: "",
     customBackendApiKey: "",
     customBackendModel: "",
@@ -99,6 +100,7 @@ test("unspecified model passthroughs to default backend with incoming key", () =
     apiKey: "incoming-key",
     apiKeyHeader: "authorization",
     model: null,
+    responsesToChat: false,
     reason: "passthrough-unspecified-model"
   });
 });
@@ -253,6 +255,124 @@ test("default mode ignores images from earlier Responses API turns", () => {
   assert.equal(route.apiKey, "user-key");
   assert.equal(route.model, null);
   assert.equal(route.reason, "passthrough");
+});
+
+test("responses-to-chat model converts string input to chat completions", () => {
+  const route = decideRoute({
+    config: config({
+      responsesToChatModelSet: new Set(["deepseek-v4-flash"])
+    }),
+    body: {
+      model: "deepseek-v4-flash",
+      input: "Write a haiku.",
+      max_output_tokens: 128
+    },
+    headers: new Headers({ authorization: "Bearer user-key" })
+  });
+
+  const upstream = buildUpstreamRequest({
+    originalPath: "responses",
+    body: {
+      model: "deepseek-v4-flash",
+      input: "Write a haiku.",
+      max_output_tokens: 128
+    },
+    headers: new Headers({ authorization: "Bearer user-key", "content-type": "application/json" }),
+    route
+  });
+
+  assert.equal(upstream.url, "http://127.0.0.1:8090/v1/chat/completions");
+  assert.deepEqual(JSON.parse(upstream.body), {
+    model: "deepseek-v4-flash",
+    max_tokens: 128,
+    messages: [{ role: "user", content: "Write a haiku." }]
+  });
+});
+
+test("responses-to-chat model converts text message input to chat text content", () => {
+  const upstream = buildUpstreamRequest({
+    originalPath: "responses",
+    body: {
+      model: "deepseek-v4-flash",
+      instructions: "Be concise.",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "Hello" },
+            { type: "input_text", text: "Continue" }
+          ]
+        }
+      ]
+    },
+    headers: new Headers({ authorization: "Bearer user-key", "content-type": "application/json" }),
+    route: {
+      baseUrl: "http://127.0.0.1:8090/v1",
+      apiKey: "user-key",
+      apiKeyHeader: "authorization",
+      model: null,
+      responsesToChat: true
+    }
+  });
+
+  assert.deepEqual(JSON.parse(upstream.body), {
+    model: "deepseek-v4-flash",
+    messages: [
+      { role: "system", content: "Be concise." },
+      { role: "user", content: "Hello\nContinue" }
+    ]
+  });
+});
+
+test("responses-to-chat model preserves mixed text and image content", () => {
+  const chatBody = internals.convertResponsesBodyToChat({
+    model: "deepseek-v4-flash",
+    input: [
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: "Describe this image." },
+          { type: "input_image", image_url: "https://example.com/cat.png", detail: "high" }
+        ]
+      }
+    ]
+  });
+
+  assert.deepEqual(chatBody, {
+    model: "deepseek-v4-flash",
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Describe this image." },
+          { type: "image_url", image_url: { url: "https://example.com/cat.png", detail: "high" } }
+        ]
+      }
+    ]
+  });
+});
+
+test("non configured models keep responses upstream path", () => {
+  const route = decideRoute({
+    config: config({
+      responsesToChatModelSet: new Set(["deepseek-v4-flash"])
+    }),
+    body: { model: "glm-5.1", input: "hello" },
+    headers: new Headers({ authorization: "Bearer user-key" })
+  });
+
+  const upstream = buildUpstreamRequest({
+    originalPath: "responses",
+    body: { model: "glm-5.1", input: "hello" },
+    headers: new Headers({ authorization: "Bearer user-key", "content-type": "application/json" }),
+    route
+  });
+
+  assert.equal(upstream.url, "http://127.0.0.1:8090/v1/responses");
+  assert.deepEqual(JSON.parse(upstream.body), {
+    model: "glm-5.1",
+    input: "hello"
+  });
 });
 
 test("custom-vision mode routes only image payloads to custom vision backend", () => {
